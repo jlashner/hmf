@@ -34,12 +34,16 @@ if int(sys.version[0]) < 3:
     install_requires = ["numpy>=1.6.2",
                         "scipy>=0.12.0",
                         "astropy>=1.1,<3.0",
-                        "camb>=0.1.6"],
+                        "camb>=0.1.6"
+                        "colossus>1.2"
+                        ],
 else:
     install_requires = ["numpy>=1.6.2",
                         "scipy>=0.12.0",
                         "astropy>=1.1",
-                        "camb>=0.1.6"],
+                        "camb>=0.1.6",
+                        "colossus>1.2"
+                        ],
 
 setup(
     name="hmf",
