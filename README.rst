@@ -9,12 +9,12 @@ hmf
 .. image:: https://badge.fury.io/py/hmf.svg
     :target: https://badge.fury.io/py/hmf
 .. image:: https://coveralls.io/repos/github/steven-murray/hmf/badge.svg?branch=master
-        :target: https://coveralls.io/github/steven-murray/hmf?branch=master
+    :target: https://coveralls.io/github/steven-murray/hmf?branch=master
 .. image:: https://img.shields.io/pypi/pyversions/hmf.svg
 
 .. image:: hmf_image.png
-   :height: 50px
-
+    :height: 50px
+    :scale: 50%
 
 `hmf` is a python application that provides a flexible and simple way to calculate the
 Halo Mass Function for a range of varying parameters. It is also the backend to
