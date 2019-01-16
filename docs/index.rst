@@ -5,6 +5,7 @@
 
 .. include:: ../README.rst
 
+
 Features
 --------
 * Calculate mass functions and related quantities extremely easily.
@@ -26,27 +27,19 @@ Features
 * Nonlinear power spectra via HALOFIT
 * Functions for sampling the mass function.
 * CLI scripts both for producing any quantity included, or fitting any quantity.
+* Python 2 and 3 compatible
 
 Installation
 ------------
 `hmf` is built on several other packages, most of which will be familiar to the
-scientific python programmer. All of these dependencies *should* be automatically
-installed when installing `hmf`, except for one. Explicitly, the dependencies are
-numpy, scipy, scitools, cosmolopy and emcee. 
+scientific python programmer. All of these dependencies should be automatically
+installed when installing `hmf`. Explicitly, the dependencies are
+numpy, scipy, astropy and camb.
 
 You will only need `emcee` if you are going to be using the fitting capabilities
-of `hmf`. The final, optional, library is pycamb, which can not be installed 
-using pip currently. 
+of `hmf`.
 
-Please follow the guidelines on its `readme page <https://github.com/steven-murray/pycamb.git>`_.
-installation instructions.
-
-.. note :: At present, versions of CAMB post March 2013 are not working with 
-		`pycamb`. Please use earlier versions until further notice.
-
-Finally the `hmf` package needs to be installed: ``pip install hmf``. If you want
-to install the latest build (not necessarily stable), grab it `here 
-<https://github.com/steven-murray/hmf.git>`_.
+Finally the `hmf` package needs to be installed: ``pip install hmf``.
 
 To go really bleeding edge, install the develop branch using
 ``pip install git+git://github.com/steven-murray/hmf.git@develop``.
@@ -61,7 +54,7 @@ by opening an interpreter (e.g. IPython) and doing:
 >>> mass_func = hmf.dndlnm
 
 Note that all parameters have (what I consider reasonable) defaults. In particular,
-this will return a Sheth-Mo-Tormen (2001) mass function between
+this will return a Tinker (2008) mass function between
 :math:`10^{10}-10^{15} M_\odot`, at :math:`z=0` for the default PLANCK15 cosmology.
 Nevertheless, there are several parameters which can be input, either cosmological
 or otherwise. The best way to see these is to do
@@ -89,7 +82,7 @@ which are currently under construction, or the `API docs <api.html>`_.
 Contents
 --------
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 1
 
    tutorials
    license

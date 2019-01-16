@@ -3,7 +3,9 @@ Classes defining the overall structure of the hmf framework.
 '''
 import copy
 import sys
-#from _cache import Cache
+
+
+# from _cache import Cache
 
 class Component(object):
     """
@@ -31,6 +33,7 @@ class Component(object):
         self.params = copy.copy(self._defaults)
         self.params.update(model_params)
 
+
 def get_model_(name, mod):
     """
     Returns a class ``name`` from the module ``mod``.
@@ -44,6 +47,7 @@ def get_model_(name, mod):
         The module name of the appropriate module
     """
     return getattr(sys.modules[mod], name)
+
 
 def get_model(name, mod, **kwargs):
     """
@@ -60,7 +64,8 @@ def get_model(name, mod, **kwargs):
     \*\*kwargs :
         Any parameters for the instantiated model (including model parameters)
     """
-    return get_model_(name,mod)(**kwargs)
+    return get_model_(name, mod)(**kwargs)
+
 
 class Framework(object):
     """
@@ -77,6 +82,7 @@ class Framework(object):
     Importantly, any parameter that may be passed to the constructor, *must* be
     defined as a ``parameter`` within the class so it may be set properly.
     """
+
     def __init__(self):
         super(Framework, self).__init__()
 
@@ -84,7 +90,7 @@ class Framework(object):
         """
         Update parameters of the framework with kwargs.
         """
-        for k, v in kwargs.items():
+        for k, v in list(kwargs.items()):
             if hasattr(self, k):
                 setattr(self, k, v)
                 del kwargs[k]
@@ -96,23 +102,23 @@ class Framework(object):
     def get_all_parameter_names(cls):
         "Yield all parameter names in the class."
         K = cls()
-        return getattr(K,"_"+K.__class__.__name__+"__recalc_par_prop")
+        return getattr(K, "_" + K.__class__.__name__ + "__recalc_par_prop")
 
     @classmethod
-    def get_all_parameter_defaults(cls,recursive=True):
+    def get_all_parameter_defaults(cls, recursive=True):
         "Dictionary of all parameters and defaults"
         K = cls()
         out = {}
         for name in cls.get_all_parameter_names():
-            out[name] = getattr(K,name)
+            out[name] = getattr(K, name)
 
         if recursive:
-            for name,default in out.iteritems():
+            for name, default in out.items():
                 if default == {} and name.endswith("_params"):
                     try:
-                        out[name] = getattr(getattr(K,name.replace("_params","_model")),"_defaults")
+                        out[name] = getattr(getattr(K, name.replace("_params", "_model")), "_defaults")
                     except Exception as e:
-                        print e
+                        print(e)
                         pass
 
         return out
@@ -121,8 +127,8 @@ class Framework(object):
     def parameter_values(self):
         "Dictionary of all parameters and their current values"
         out = {}
-        for name in getattr(self,"_"+self.__class__.__name__+"__recalc_par_prop"):
-            out[name] = getattr(self,name)
+        for name in getattr(self, "_" + self.__class__.__name__ + "__recalc_par_prop"):
+            out[name] = getattr(self, name)
         return out
 
     @classmethod
@@ -135,10 +141,32 @@ class Framework(object):
     def _get_all_parameters(cls):
         "Yield all parameters as tuples of (name,obj)"
         for name in cls.get_all_parameter_names():
-            yield name, getattr(cls,name)
+            yield name, getattr(cls, name)
+
+    def get_dependencies(self, *q):
+        """
+        Determine all parameter dependencies of the quantities in q.
+
+        Parameters
+        ----------
+        q : str
+            String(s) labelling a quantity
+
+        Returns
+        -------
+        deps : set
+            A set containing all parameters on which quantities in q are dependent.
+        """
+        deps = set()
+        for quant in q:
+            getattr(self, quant)
+
+            deps.update(getattr(self, "_" + self.__class__.__name__ + "__recalc_prop_par_static")[quant])
+
+        return deps
 
     @classmethod
-    def parameter_info(cls,names=None):
+    def parameter_info(cls, names=None):
         """
         Prints information about each parameter in the class.
 
@@ -149,7 +177,7 @@ class Framework(object):
             if names and name not in names:
                 continue
 
-            docs += name+" : "
+            docs += name + " : "
             objdoc = obj.__doc__.split("\n")
 
             if len(objdoc[0]) == len("**Parameter**: "):
@@ -162,13 +190,13 @@ class Framework(object):
             while "" in objdoc:
                 objdoc.remove("")
 
-            for i,line in enumerate(objdoc):
+            for i, line in enumerate(objdoc):
                 if ":type:" in line:
                     docs += line.split(":type:")[-1].strip() + "\n    "
                     del objdoc[i]
                     break
 
-            docs += "\n    ".join(objdoc) +"\n\n"
+            docs += "\n    ".join(objdoc) + "\n\n"
             while "\n\n\n" in docs:
-                docs.replace("\n\n\n","\n\n")
-        print(docs[:-1])
+                docs.replace("\n\n\n", "\n\n")
+        print((docs[:-1]))

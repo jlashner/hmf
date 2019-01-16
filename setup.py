@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 import os
 import sys
@@ -21,6 +21,7 @@ def find_version(*file_paths):
         return version_match.group(1)
     raise RuntimeError("Unable to find version string.")
 
+
 if sys.argv[-1] == "publish":
     os.system("rm dist/*")
     os.system("python setup.py sdist")
@@ -28,14 +29,23 @@ if sys.argv[-1] == "publish":
     os.system("twine upload dist/*")
     sys.exit()
 
+# Python version dependent requirements.
+if int(sys.version[0]) < 3:
+    install_requires = ["numpy>=1.6.2",
+                        "scipy>=0.12.0",
+                        "astropy>=1.1,<3.0",
+                        "camb>=0.1.6"],
+else:
+    install_requires = ["numpy>=1.6.2",
+                        "scipy>=0.12.0",
+                        "astropy>=1.1",
+                        "camb>=0.1.6"],
 
 setup(
     name="hmf",
     version=find_version("hmf", "__init__.py"),
-    packages=['hmf', 'hmf.fitting'],
-    install_requires=["numpy>=1.6.2",
-                      "scipy>=0.12.0",
-                      "astropy>=1.1"],
+    packages=find_packages(),
+    install_requires=install_requires,
     scripts=["scripts/hmf", "scripts/hmf-fit"],
     author="Steven Murray",
     author_email="steven.murray@curtin.edu.au",
@@ -44,5 +54,8 @@ setup(
     license="MIT",
     keywords="halo mass function",
     url="https://github.com/steven-murray/hmf",
+    classifiers=["Programming Language :: Python :: 2.7",
+                 "Programming Language :: Python :: 3.6",
+                 ]
     # could also include long_description, download_url, classifiers, etc.
 )

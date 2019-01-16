@@ -6,12 +6,14 @@ in :mod:`hmf.transfer`.
 '''
 import numpy as np
 from scipy.interpolate import InterpolatedUnivariateSpline as spline
-from _framework import Component
-try:
-    import pycamb
-except ImportError:
-    pass
+from .._internals._framework import Component
+from astropy import cosmology
 
+try:
+    import camb
+    HAVE_CAMB = True
+except ImportError as e:
+    HAVE_CAMB = False
 
 _allfits = ["CAMB", "FromFile", "EH_BAO", "EH_NoBAO", "BBKS", "BondEfs"]
 
@@ -32,6 +34,7 @@ class TransferComponent(Component):
         Any model-specific parameters.
     """
     _defaults = {}
+
     def __init__(self, cosmo, **model_parameters):
         self.cosmo = cosmo
         super(TransferComponent, self).__init__(**model_parameters)
@@ -52,9 +55,13 @@ class TransferComponent(Component):
         """
         pass
 
-class CAMB(TransferComponent):
+
+class FromFile(TransferComponent):
     """
-    Transfer function computed by CAMB.
+    Import a transfer function from file.
+
+    .. note:: The file should be in the same format as output from CAMB,
+              or else in two-column ASCII format (k,T).
 
     Parameters
     ----------
@@ -66,30 +73,10 @@ class CAMB(TransferComponent):
         parameters are the following. To see their default values,
         check the :attr:`_defaults` class attribute.
 
-        :Scalar_initial_condition: Initial scalar perturbation mode (adiabatic=1, CDM iso=2,
-                                   Baryon iso=3,neutrino density iso =4, neutrino velocity iso = 5)
-        :lAccuracyBoost: Larger to keep more terms in the hierarchy evolution
-        :AccuracyBoost: Increase accuracy_boost to decrease time steps, use more k
-                        values,  etc.Decrease to speed up at cost of worse accuracy.
-                        Suggest 0.8 to 3.
-        :w_perturb: Whether to perturb the dark energy equation of state.
-        :transfer__k_per_logint: Number of wavenumbers estimated per log interval by CAMB
-                                 Default of 11 gets best performance for requisite accuracy of mass function.
-        :transfer__kmax: Maximum value of the wavenumber.
-                         Default of 0.25 is high enough for requisite accuracy of mass function.
-        :ThreadNum: Number of threads to use for calculation of transfer
-                    function by CAMB. Default 0 automatically determines the number.
-        :scalar_amp: Amplitude of the power spectrum. It is not recommended to modify
-                     this parameter, as the amplitude is typically set by sigma_8.
+        :fname: str
+            Location of the file to import.
     """
-    _defaults = {"Scalar_initial_condition":1,
-                 "lAccuracyBoost":1,
-                 "AccuracyBoost":1,
-                 "w_perturb":False,
-                 "transfer__k_per_logint":11,
-                 "transfer__kmax":5,
-                 "ThreadNum":0,
-                 "scalar_amp":1e-9}
+    _defaults = {"fname": ""}
 
     def _check_low_k(self, lnk, lnT, lnkmin):
         """
@@ -132,67 +119,6 @@ class CAMB(TransferComponent):
         lnt : array_like
             The log of the transfer function at lnk.
         """
-
-        pycamb_dict = {"w_lam":self.cosmo.w(0),
-                       "TCMB":self.cosmo.Tcmb0.value,
-                       "Num_Nu_massless":self.cosmo.Neff,
-                       "omegab":self.cosmo.Ob0,
-                       "omegac":self.cosmo.Om0 - self.cosmo.Ob0,
-                       "H0":self.cosmo.H0.value,
-                       "omegav":self.cosmo.Ode0,
-                       "omegak":self.cosmo.Ok0,
-                       "omegan":self.cosmo.Onu0,
-#                        "scalar_index":self.n,
-                       }
-
-        cdict = dict(pycamb_dict,
-                     **self.params)
-        T = pycamb.transfers(**cdict)[1]
-        T = np.log(T[[0, 6], :, 0])
-
-        if lnk[0] < T[0, 0]:
-            lnkout, lnT = self._check_low_k(T[0, :], T[1, :], lnk[0])
-        else:
-            lnkout = T[0, :]
-            lnT = T[1, :]
-        return spline(lnkout, lnT, k=1)(lnk)
-
-class FromFile(CAMB):
-    """
-    Import a transfer function from file.
-
-    .. note:: The file should be in the same format as output from CAMB,
-              or else in two-column ASCII format (k,T).
-
-    Parameters
-    ----------
-    cosmo : :class:`astropy.cosmology.FLRW` instance
-        The cosmology used in the calculation
-
-    \*\*model_parameters : unpack-dict
-        Parameters specific to this model. In this case, available
-        parameters are the following. To see their default values,
-        check the :attr:`_defaults` class attribute.
-
-        :fname: str
-            Location of the file to import.
-    """
-    _defaults = {"fname":""}
-
-    def lnt(self, lnk):
-        """
-        Natural log of the transfer function
-
-        Parameters
-        ----------
-        lnk : array_like
-            Wavenumbers [Mpc/h]
-
-        Returns
-        -------
-        lnt : array_like
-            The log of the transfer function at lnk.
-        """
         try:
             T = np.log(np.genfromtxt(self.params["fname"])[:, [0, 6]].T)
         except IndexError:
@@ -204,6 +130,84 @@ class FromFile(CAMB):
             lnkout = T[0, :]
             lnT = T[1, :]
         return spline(lnkout, lnT, k=1)(lnk)
+
+
+if HAVE_CAMB:
+    class CAMB(FromFile):
+        """
+        Transfer function computed by CAMB.
+
+        Parameters
+        ----------
+        cosmo : :class:`astropy.cosmology.FLRW` instance
+            The cosmology used in the calculation
+
+        \*\*model_parameters : unpack-dict
+            Parameters specific to this model.
+
+            **camb_params:** An instantiated ``CAMBparams`` object, pre-set with desired accuracy options etc.
+            **dark_energy_params:** A dictionary of values passed to CAMB's ``set_dark_energy`` method. Values include
+                                    `sound_speed` and `dark_energy_model`.
+        """
+        _defaults = {"camb_params": None, "dark_energy_params":{}}
+
+        def __init__(self, *args, **kwargs):
+            super(CAMB, self).__init__(*args, **kwargs)
+
+            if not (isinstance(self.cosmo, cosmology.LambdaCDM) or isinstance(self.cosmo, cosmology.wCDM)):
+                raise ValueError("CAMB will only work with LCDM or wCDM cosmologies")
+
+            # Save the CAMB object properly for use
+            # Set the cosmology
+            if self.params['camb_params'] is None:
+                self.params['camb_params'] = camb.CAMBparams()
+
+            if self.cosmo.Ob0 is None:
+                raise ValueError("To use CAMB, you must set the baryon density in the cosmology explicitly.")
+
+            if self.cosmo.Tcmb0.value == 0:
+                raise ValueError("If using CAMB, the CMB temperature must be set explicitly in the cosmology.")
+
+            self.params['camb_params'].set_cosmology(H0=self.cosmo.H0.value,
+                                                     ombh2=self.cosmo.Ob0* self.cosmo.h ** 2,
+                                                     omch2=(self.cosmo.Om0 - self.cosmo.Ob0) * self.cosmo.h ** 2,
+                                                     omk=self.cosmo.Ok0,
+                                                     nnu=self.cosmo.Neff,
+                                                     standard_neutrino_neff=self.cosmo.Neff,
+                                                     TCMB=self.cosmo.Tcmb0.value)
+            self.params['camb_params'].WantTransfer = True
+
+            # Set the DE equation of state. We only support constant w.
+            if isinstance(self.cosmo, cosmology.wCDM):
+                self.params['camb_params'].set_dark_energy(w=self.cosmo.w0)
+
+        def lnt(self, lnk):
+            """
+            Natural log of the transfer function
+
+            Parameters
+            ----------
+            lnk : array_like
+                Wavenumbers [Mpc/h]
+
+            Returns
+            -------
+            lnt : array_like
+                The log of the transfer function at lnk.
+            """
+
+            camb_transfers = camb.get_transfer_functions(self.params['camb_params'])
+            T = camb_transfers.get_matter_transfer_data().transfer_data
+            T = np.log(T[[0, 6], :, 0])
+
+            if lnk[0] < T[0, 0]:
+                lnkout, lnT = self._check_low_k(T[0, :], T[1, :], lnk[0])
+            else:
+                lnkout = T[0, :]
+                lnT = T[1, :]
+
+            return spline(lnkout, lnT, k=1)(lnk)
+
 
 class FromArray(FromFile):
     """
@@ -225,8 +229,8 @@ class FromArray(FromFile):
         :T: array
             Transfer function
     """
-    _defaults = {"k":None,
-                 "T":None}
+    _defaults = {"k": None,
+                 "T": None}
 
     def lnt(self, lnk):
         """
@@ -257,6 +261,7 @@ class FromArray(FromFile):
             lnT = np.log(T)
         return spline(lnkout, lnT, k=1)(lnk)
 
+
 class EH_BAO(TransferComponent):
     """
     Eisenstein & Hu (1998) fitting function with BAO wiggles
@@ -272,8 +277,9 @@ class EH_BAO(TransferComponent):
         Parameters specific to this model. In this case, there
         are no model parameters.
     """
-    def __init__(self,*args,**kwargs):
-        super(EH_BAO,self).__init__(*args,**kwargs)
+
+    def __init__(self, *args, **kwargs):
+        super(EH_BAO, self).__init__(*args, **kwargs)
         self._set_params()
 
     def _set_params(self):
@@ -284,53 +290,49 @@ class EH_BAO(TransferComponent):
         self.Omh2 = self.cosmo.Om0 * self.cosmo.h ** 2
         self.f_baryon = self.cosmo.Ob0 / self.cosmo.Om0
 
-
         self.theta_cmb = self.cosmo.Tcmb0.value / 2.7
 
-        self.z_eq = 2.5e4 * self.Omh2 * self.theta_cmb ** (-4) #really 1+z
-        self.k_eq = 7.46e-2 * self.Omh2 * self.theta_cmb ** (-2)  #units Mpc^-1 (no h!)
+        self.z_eq = 2.5e4 * self.Omh2 * self.theta_cmb ** (-4)  # really 1+z
+        self.k_eq = 7.46e-2 * self.Omh2 * self.theta_cmb ** (-2)  # units Mpc^-1 (no h!)
 
-        self.z_drag_b1 = 0.313 * self.Omh2**-0.419 * (1. + 0.607 * self.Omh2 ** 0.674)
+        self.z_drag_b1 = 0.313 * self.Omh2 ** -0.419 * (1. + 0.607 * self.Omh2 ** 0.674)
         self.z_drag_b2 = 0.238 * self.Omh2 ** 0.223
-        self.z_drag = (1291.*self.Omh2 ** 0.251 / (1. + 0.659 * self.Omh2 ** 0.828) *
+        self.z_drag = (1291. * self.Omh2 ** 0.251 / (1. + 0.659 * self.Omh2 ** 0.828) *
                        (1. + self.z_drag_b1 * self.Obh2 ** self.z_drag_b2))
 
-        self.r_drag = 31.5 * self.Obh2 * self.theta_cmb**-4 * (1000. / (1+self.z_drag))
-        self.r_eq = 31.5 * self.Obh2 * self.theta_cmb**-4 * (1000. / self.z_eq)
+        self.r_drag = 31.5 * self.Obh2 * self.theta_cmb ** -4 * (1000. / (1 + self.z_drag))
+        self.r_eq = 31.5 * self.Obh2 * self.theta_cmb ** -4 * (1000. / self.z_eq)
 
-
-        self.sound_horizon = (2. / (3.*self.k_eq)) * np.sqrt(6. / self.r_eq) * np.log(
+        self.sound_horizon = (2. / (3. * self.k_eq)) * np.sqrt(6. / self.r_eq) * np.log(
             (np.sqrt(1. + self.r_drag) + np.sqrt(self.r_drag + self.r_eq)) / (1. + np.sqrt(self.r_eq)))
 
         self.k_silk = 1.6 * self.Obh2 ** 0.52 * self.Omh2 ** 0.73 * (1. + (10.4 * self.Omh2) ** (-0.95))
 
         alpha_c_a1 = (46.9 * self.Omh2) ** 0.670 * (1. + (32.1 * self.Omh2) ** (-0.532))
-        alpha_c_a2 = (12.*self.Omh2) ** 0.424 * (1. + (45.*self.Omh2) ** (-0.582))
+        alpha_c_a2 = (12. * self.Omh2) ** 0.424 * (1. + (45. * self.Omh2) ** (-0.582))
         self.alpha_c = alpha_c_a1 ** (-self.f_baryon) * alpha_c_a2 ** (-self.f_baryon ** 3)
 
-        beta_c_b1 = 0.944 / (1. + (458.*self.Omh2) **-0.708)
+        beta_c_b1 = 0.944 / (1. + (458. * self.Omh2) ** -0.708)
         beta_c_b2 = (0.395 * self.Omh2) ** -0.0266
-        self.beta_c = 1. / (1. + beta_c_b1 * ((1-self.f_baryon) ** beta_c_b2 - 1))
+        self.beta_c = 1. / (1. + beta_c_b1 * ((1 - self.f_baryon) ** beta_c_b2 - 1))
 
-        y = self.z_eq/(1+self.z_drag)
-        alpha_b_G = y*(-6*np.sqrt(1+y)+(2+3*y)* np.log((np.sqrt(1+y)+1)/(np.sqrt(1+y)-1)))
-        self.alpha_b = 2.07 * self.k_eq * self.sound_horizon * (1. + self.r_drag)**-0.75 * alpha_b_G
+        y = self.z_eq / (1 + self.z_drag)
+        alpha_b_G = y * (-6 * np.sqrt(1 + y) + (2 + 3 * y) * np.log((np.sqrt(1 + y) + 1) / (np.sqrt(1 + y) - 1)))
+        self.alpha_b = 2.07 * self.k_eq * self.sound_horizon * (1. + self.r_drag) ** -0.75 * alpha_b_G
 
-        self.beta_node = 8.41*self.Omh2**0.435
-        self.beta_b = 0.5 + self.f_baryon + (3. - 2.*self.f_baryon) * np.sqrt((17.2 * self.Omh2) ** 2 + 1.)
+        self.beta_node = 8.41 * self.Omh2 ** 0.435
+        self.beta_b = 0.5 + self.f_baryon + (3. - 2. * self.f_baryon) * np.sqrt((17.2 * self.Omh2) ** 2 + 1.)
 
     @property
     def k_peak(self):
-        return 2.5 * np.pi * (1 + 0.217*self.Omh2)/self.sound_horizon
+        return 2.5 * np.pi * (1 + 0.217 * self.Omh2) / self.sound_horizon
 
     @property
     def sound_horizon_fit(self):
         """
         Sound horizon in Mpc/h
         """
-        return self.cosmo.h * 44.5 * np.log(9.83/self.Omh2)/np.sqrt(1+10*(self.Obh2**0.75))
-
-
+        return self.cosmo.h * 44.5 * np.log(9.83 / self.Omh2) / np.sqrt(1 + 10 * (self.Obh2 ** 0.75))
 
     def lnt(self, lnk):
         """
@@ -352,14 +354,14 @@ class EH_BAO(TransferComponent):
         q = k / (13.41 * self.k_eq)
         ks = k * self.sound_horizon
 
-        T_c_ln_beta = np.log(np.e + 1.8*self.beta_c*q)
-        T_c_ln_nobeta = np.log(np.e + 1.8*q)
+        T_c_ln_beta = np.log(np.e + 1.8 * self.beta_c * q)
+        T_c_ln_nobeta = np.log(np.e + 1.8 * q)
         T_c_C_alpha = (14.2 / self.alpha_c) + 386. / (1. + 69.9 * q ** 1.08)
         T_c_C_noalpha = 14.2 + 386. / (1. + 69.9 * q ** 1.08)
 
         T_c_f = 1. / (1. + (ks / 5.4) ** 4)
-        term = lambda a,b : a/(a+b*q**2)
-        T_c = T_c_f * term(T_c_ln_beta, T_c_C_noalpha) + (1-T_c_f)*term(T_c_ln_beta, T_c_C_alpha)
+        term = lambda a, b: a / (a + b * q ** 2)
+        T_c = T_c_f * term(T_c_ln_beta, T_c_C_noalpha) + (1 - T_c_f) * term(T_c_ln_beta, T_c_C_alpha)
 
         s_tilde = self.sound_horizon / (1. + (self.beta_node / ks) ** 3) ** (1. / 3.)
         ks_tilde = k * s_tilde
@@ -369,7 +371,8 @@ class EH_BAO(TransferComponent):
         Tb2 = (self.alpha_b / (1. + (self.beta_b / ks) ** 3)) * np.exp(-(k / self.k_silk) ** 1.4)
         T_b = np.sin(ks_tilde) / ks_tilde * (Tb1 + Tb2)
 
-        return np.log(self.f_baryon * T_b + (1-self.f_baryon) * T_c)
+        return np.log(self.f_baryon * T_b + (1 - self.f_baryon) * T_c)
+
 
 class EH_NoBAO(EH_BAO):
     """
@@ -389,7 +392,8 @@ class EH_NoBAO(EH_BAO):
 
     @property
     def alpha_gamma(self):
-        return 1 - 0.328 * np.log(431*self.Omh2)*self.f_baryon + 0.38*np.log(22.3*self.Omh2) * self.f_baryon**2
+        return 1 - 0.328 * np.log(431 * self.Omh2) * self.f_baryon + 0.38 * np.log(
+            22.3 * self.Omh2) * self.f_baryon ** 2
 
     def lnt(self, lnk):
         """
@@ -407,16 +411,17 @@ class EH_NoBAO(EH_BAO):
         """
         k = np.exp(lnk) * self.cosmo.h
 
-        ks = k * self.sound_horizon_fit / self.cosmo.h #need sound horizon in Mpc here
+        ks = k * self.sound_horizon_fit / self.cosmo.h  # need sound horizon in Mpc here
 
         gamma_eff = self.Omh2 * (self.alpha_gamma + (1 - self.alpha_gamma) / (1 + (0.43 * ks) ** 4))
-        q = k/(13.4*self.k_eq)
+        q = k / (13.4 * self.k_eq)
 
-        q_eff = q * self.Omh2/gamma_eff
+        q_eff = q * self.Omh2 / gamma_eff
 
         L0 = np.log(2 * np.e + 1.8 * q_eff)
         C0 = 14.2 + 731.0 / (1 + 62.5 * q_eff)
         return np.log(L0 / (L0 + C0 * q_eff * q_eff))
+
 
 class BBKS(TransferComponent):
     r"""
@@ -445,7 +450,8 @@ class BBKS(TransferComponent):
 
     and :math:`\Gamma = \Omega_{m,0} h`.
     """
-    _defaults = {"a":2.34,"b":3.89,"c":16.1,"d":5.47,"e":6.71}
+    _defaults = {"a": 2.34, "b": 3.89, "c": 16.1, "d": 5.47, "e": 6.71}
+
     def lnt(self, lnk):
         """
         Natural log of the transfer function
@@ -468,10 +474,11 @@ class BBKS(TransferComponent):
 
         Gamma = self.cosmo.Om0 * self.cosmo.h
         q = np.exp(lnk) / Gamma * np.exp(self.cosmo.Ob0 + np.sqrt(2 * self.cosmo.h) *
-                               self.cosmo.Ob0 / self.cosmo.Om0)
+                                         self.cosmo.Ob0 / self.cosmo.Om0)
         return np.log((np.log(1.0 + a * q) / (a * q) *
-                (1 + b * q + (c * q) ** 2 + (d * q) ** 3 +
-                 (e * q) ** 4) ** (-0.25)))
+                       (1 + b * q + (c * q) ** 2 + (d * q) ** 3 +
+                        (e * q) ** 4) ** (-0.25)))
+
 
 class BondEfs(TransferComponent):
     r"""
@@ -498,7 +505,7 @@ class BondEfs(TransferComponent):
 
     .. math:: \alpha = \frac{0.3\times 0.75^2}{\Omega_{m,0} h^2}.
     """
-    _defaults = {"a":37.1,"b":21.1,"c":10.8,"nu":1.12}
+    _defaults = {"a": 37.1, "b": 21.1, "c": 10.8, "nu": 1.12}
 
     def lnt(self, lnk):
         """
@@ -515,7 +522,7 @@ class BondEfs(TransferComponent):
             The log of the transfer function at lnk.
         """
 
-        scale = (0.3*0.75**2) / (self.cosmo.Om0 * self.cosmo.h ** 2)
+        scale = (0.3 * 0.75 ** 2) / (self.cosmo.Om0 * self.cosmo.h ** 2)
 
         a = self.params['a'] * scale
         b = self.params['b'] * scale
@@ -523,6 +530,7 @@ class BondEfs(TransferComponent):
         nu = self.params['nu']
         k = np.exp(lnk)
         return np.log((1 + (a * k + (b * k) ** 1.5 + (c * k) ** 2) ** nu) ** (-1 / nu))
+
 
 class EH(EH_BAO):
     "Alias of :class:`EH_BAO`"
