@@ -12,12 +12,13 @@ hmf
         :target: https://coveralls.io/github/steven-murray/hmf?branch=master
 .. image:: https://img.shields.io/pypi/pyversions/hmf.svg
 
-`hmf` is a python application that provides a flexible and simple way to calculate the 
+.. image:: hmf_image.png
+   :height: 50px
+
+
+`hmf` is a python application that provides a flexible and simple way to calculate the
 Halo Mass Function for a range of varying parameters. It is also the backend to
 `HMFcalc <http://hmf.icrar.org>`_, the online HMF calculator.
-
-.. image:: hmf_image.png
-   :height: 100px
 
 .. warning:: Due to the general trend of moving to Python 3 by important projects such as IPython and astropy, from
              version 3.0, hmf is compatible with Python 3, and from version 3.1, it will drop (official) support for
