@@ -45,7 +45,7 @@ class Transfer(cosmo.Cosmology):
     def __init__(self, sigma_8=0.8159, n=0.9667, z=0.0, lnk_min=np.log(1e-8),
                  lnk_max=np.log(2e4), dlnk=0.05, transfer_model=tm.CAMB if HAVE_PYCAMB else tm.EH,
                  transfer_params=None, takahashi=True, growth_model=None,
-                 growth_params=None, colossus_params=None, **kwargs):
+                 growth_params=None, **kwargs):
 
         # Call Cosmology init
         super(Transfer, self).__init__(**kwargs)
@@ -61,7 +61,6 @@ class Transfer(cosmo.Cosmology):
         self.transfer_model = transfer_model
         self.transfer_params = transfer_params or {}
         self.takahashi = takahashi
-        self.colossus_params = colossus_params
 
         # Growth model has a more complicated default.
         # We set it here so that "None" is not a relevant option for self.growth_model (and it can't be explicitly
@@ -207,11 +206,6 @@ class Transfer(cosmo.Cosmology):
 
         return val
 
-    @parameter("param")
-    def colossus_params(self, val):
-        """Options used in the colossus cosmology class which are not set/derived in the astropy cosmology"""
-        return val
-
     # ===========================================================================
     # DERIVED PROPERTIES AND FUNCTIONS
     # ===========================================================================
@@ -316,10 +310,3 @@ class Transfer(cosmo.Cosmology):
 
         return _hfit(self.k, self.delta_k, self.sigma_8, self.z, self.cosmo, self.takahashi)
 
-    @cached_quantity
-    def colossus_cosmo(self):
-        """
-        An instance of a COLOSSUS cosmology, which can be used to perform various
-        COLOSSUS operations.
-        """
-        return cosmo.astropy_to_colossus(self.cosmo.cosmo, sigma8=self.sigma_8, ns=self.n, **self.colossus_params)

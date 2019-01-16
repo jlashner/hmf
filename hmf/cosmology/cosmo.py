@@ -15,20 +15,25 @@ from astropy.cosmology import FLRW, Planck15, WMAP5, WMAP7, WMAP9, Planck13
 from .._internals import _framework, _cache
 import sys
 import astropy.units as u
-from colossus.cosmology import cosmology
 
+try:
+    from colossus.cosmology import cosmology
+    HAVE_COLOSSUS = True
+except ImportError:
+    HAVE_COLOSSUS = False
 
-def astropy_to_colossus(cosmo, **kwargs):
-    return cosmology.setCosmology(
-        flat=cosmo.Ok0 == 0,
-        H0=cosmo.H0,
-        Om0=cosmo.Om0,
-        Ode0=cosmo.Ode0,
-        Ob0=cosmo.Ob0,
-        Tcmb0=cosmo.Tcmb0,
-        Neff=cosmo.Neff,
-        **kwargs
-    )
+if HAVE_COLOSSUS:
+    def astropy_to_colossus(cosmo, **kwargs):
+        return cosmology.setCosmology(
+            flat=cosmo.Ok0 == 0,
+            H0=cosmo.H0,
+            Om0=cosmo.Om0,
+            Ode0=cosmo.Ode0,
+            Ob0=cosmo.Ob0,
+            Tcmb0=cosmo.Tcmb0,
+            Neff=cosmo.Neff,
+            **kwargs
+        )
 
 class Cosmology(_framework.Framework):
     """
