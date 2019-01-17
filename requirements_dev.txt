@@ -6,6 +6,7 @@ coverage
 Sphinx
 cryptography
 PyYAML
+pluggy
 pytest
 pytest-runner
 pytest-cov
