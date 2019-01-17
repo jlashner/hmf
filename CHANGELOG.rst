@@ -20,11 +20,14 @@ dev
   ``upper_integral_mass_limit`` holds the relevant upper mass limit at which the integral converges to this relative
   tolerance *for the masses set by the user*. Changing `Mmax` will change the upper mass limit, as the the integral
   will need to be performed further to converge for the highest mass.
+- `sample_mf` now takes an optional `vol` parameter so that stochastic numbers of halos can be drawn consistently.
+- `sapmle_mf` now takes an optional MassFunction instance, instead of having to pass only keywords to create one.
 
 **Bugfixes**
 
 - When using camb for the transfer function, some cosmologies would lead to a segfault (i.e. when Ob0 or Tcmb0 are not
   set explicitly). This now raises a helpful error.
+- Fixed sampling function when Mmax is large (especially ~18).
 
 **Deprecations**
 
