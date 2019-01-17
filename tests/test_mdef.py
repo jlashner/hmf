@@ -8,7 +8,7 @@ from astropy.cosmology import Planck15
 import numpy as np
 
 # Set COLOSSUS cosmology
-setCosmology('planck15')
+setCosmology('planck15', persistence='')
 
 
 def test_mean_to_mean_nfw():
