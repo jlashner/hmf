@@ -11,7 +11,7 @@ Cosmology framework. All custom subclasses of :class:`astropy.cosmology.FLRW`
 may be used as inputs.
 """
 
-from astropy.cosmology import FLRW, Planck15, WMAP5, WMAP7, WMAP9, Planck13
+from astropy.cosmology import FLRW, Planck15, WMAP5, WMAP7, WMAP9, Planck13, w0waCDM, w0wzCDM, wCDM, wpwaCDM
 from .._internals import _framework, _cache
 import sys
 import astropy.units as u
@@ -24,6 +24,22 @@ except ImportError:
 
 if HAVE_COLOSSUS:
     def astropy_to_colossus(cosmo, **kwargs):
+
+        # Find appropriate w(z) arguments.
+        if isinstance(cosmo, wpwaCDM):
+            kwargs.update(de_model='user')
+            kwargs.update(wz_function = lambda z: cosmo.wp + cosmo.wa * (cosmo.ap - 1/(1+z)))
+        elif isinstance(cosmo, w0waCDM):
+            kwargs.update(de_model = 'w0wa')
+            kwargs.update(w0 = cosmo.w0)
+            kwargs.update(wa = cosmo.wa)
+        elif isinstance(cosmo, w0wzCDM):
+            kwargs.update(de_model='user')
+            kwargs.update(wz_function = lambda z: cosmo.w0 + cosmo.wz*z)
+        elif isinstance(cosmo, wCDM):
+            kwargs.update(de_model = 'w0')
+            kwargs.update(w0 = cosmo.w0)
+
         return cosmology.setCosmology(
             flat=cosmo.Ok0 == 0,
             H0=cosmo.H0,
