@@ -5,33 +5,34 @@ As such, it is the best test of all calculations after sigma.
 '''
 
 import numpy as np
-from hmf import MassFunction
-from scipy.special import erfc
 import pytest
+from scipy.special import erfc
+
+from hmf import MassFunction
 
 
-@pytest.fixture(params=['PS', "Peacock"])
-def getmf(request):
+@pytest.fixture(scope='module')
+def hmf():
     # Note: if Mmax>15, starts going wrong because of numerics at high M
-    return MassFunction(Mmin=10, Mmax=15, dlog10m=0.01, hmf_model=request.param)
+    return MassFunction(Mmin=10, Mmax=15, dlog10m=0.01, hmf_model="PS")
 
 
-def test_fcoll(getmf):
+@pytest.mark.parametrize("model", ['PS', 'Peacock'])
+def test_fcoll(hmf, model):
+    hmf.hmf_model = model
 
-    num = getmf.rho_gtm / getmf.mean_density0
+    num = hmf.rho_gtm / hmf.mean_density0
 
-    if getmf.hmf_model.__name__ == "PS":
-        anl = fcoll_PS(np.sqrt(getmf.nu))
-
-    elif getmf.hmf_model.__name__ == "Peacock":
-        anl = fcoll_Peacock(np.sqrt(getmf.nu))
-    else:
-        print(getmf.hmf_model.__name__)
+    if model == "PS":
+        anl = fcoll_PS(np.sqrt(hmf.nu))
+    elif model == "Peacock":
+        anl = fcoll_Peacock(np.sqrt(hmf.nu))
 
     err = np.abs((num - anl) / anl)
     print(np.max(err))
     print(num / anl - 1)
     assert np.max(err) < 0.05
+
 
 def fcoll_PS(nu):
     return erfc(nu / np.sqrt(2))
@@ -49,10 +50,10 @@ class TestCumulants(object):
 
     @pytest.fixture
     def peacock(self):
-        return MassFunction(hmf_model="Peacock", dlog10m = 0.01)
+        return MassFunction(hmf_model="Peacock", dlog10m=0.01)
 
     @pytest.mark.parametrize(['Mmin', "Mmax"],
-                             [(9,14), (9,15), (9,16), (9,18), (9,19),
+                             [(9, 14), (9, 15), (9, 16), (9, 18), (9, 19),
                               (10, 14), (10, 15), (10, 16), (10, 18), (10, 19),
                               (11, 14), (11, 15), (11, 16), (11, 18), (11, 19)])
     def test_ranges_cut(self, peacock, Mmin, Mmax):
@@ -62,6 +63,8 @@ class TestCumulants(object):
         num = peacock.rho_gtm / peacock.mean_density0
         err = np.abs((num - anl) / anl)[np.logical_and(peacock.m > 10 ** 10, peacock.m < 10 ** 15)]
         err = err[np.logical_not(np.isnan(err))]
+        print("ANL: ", anl / num)
+        #        print("NUM: ", num)
         print((np.max(err)))
         assert np.max(err) < 0.4
 
@@ -69,11 +72,12 @@ class TestCumulants(object):
     def tinker(self):
         return MassFunction(Mmin=0, hmf_model="Tinker08", dlog10m=0.01)
 
-    @pytest.mark.parametrize("Mmax", [14,15,16,18,19])
+    @pytest.mark.parametrize("Mmax", [14, 15, 16, 18, 19])
     def test_mgtm(self, tinker, Mmax):
         tinker.update(Mmax=Mmax)
         print("rhogtm: ", tinker.rho_gtm)
         print("rhomean:", tinker.mean_density0)
+        print("upper_integral: ", tinker.upper_integral_mgtm)
 
         assert np.abs(tinker.rho_gtm[0] / tinker.mean_density0 - 1) < 0.1  # THIS IS PRETTY BIG!
 

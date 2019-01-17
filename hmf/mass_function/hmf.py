@@ -5,25 +5,21 @@ The module contains a single class, `MassFunction`, which wraps almost all the
 functionality of :mod:`hmf` in an easy-to-use way.
 '''
 
-###############################################################################
-# Some Imports
-###############################################################################
-import numpy as np
 import copy
-from scipy.optimize import minimize
-from scipy.interpolate import InterpolatedUnivariateSpline as spline
 import warnings
+
+import numpy as np
 from numpy import issubclass_
+from scipy.interpolate import InterpolatedUnivariateSpline as spline
+from scipy.optimize import minimize
 
 from . import fitting_functions as ff
-from ..density_field import transfer
+from .integrate_hmf import hmf_integral_gtm as int_gtm, calc_required_maximum_mass
 from .._internals._cache import parameter, cached_quantity
-from ..density_field.filters import TopHat, Filter
 from .._internals._framework import get_model_
+from ..density_field import transfer
+from ..density_field.filters import TopHat, Filter
 from ..halos.mass_definitions import MassDefinition as md
-
-from .integrate_hmf import hmf_integral_gtm as int_gtm
-
 
 
 class MassFunction(transfer.Transfer):
@@ -69,6 +65,7 @@ class MassFunction(transfer.Transfer):
     def __init__(self, Mmin=10, Mmax=15, dlog10m=0.01, hmf_model=ff.Tinker08, hmf_params=None,
                  mdef_model=None, mdef_params=None,
                  delta_c=1.686, filter_model=TopHat, filter_params=None,
+                 ensure_convergent_upper_integral=True,
                  **transfer_kwargs):
         # # Call super init MUST BE DONE FIRST.
         super(MassFunction, self).__init__(**transfer_kwargs)
@@ -87,13 +84,14 @@ class MassFunction(transfer.Transfer):
         self.hmf_params = hmf_params or {}
         self.filter_model = filter_model
         self.filter_params = filter_params or {}
+        self.ensure_convergent_upper_integral = ensure_convergent_upper_integral
 
     # ===========================================================================
     # PARAMETERS
     # ===========================================================================
     @parameter("res")
     def Mmin(self, val):
-        """
+        r"""
         Minimum mass at which to perform analysis [units :math:`\log_{10}M_\odot h^{-1}`].
 
         :type: float
@@ -102,7 +100,7 @@ class MassFunction(transfer.Transfer):
 
     @parameter("res")
     def Mmax(self, val):
-        """
+        r"""
         Maximum mass at which to perform analysis [units :math:`\log_{10}M_\odot h^{-1}`].
 
         :type: float
@@ -117,6 +115,21 @@ class MassFunction(transfer.Transfer):
         :type: float
         """
         return val
+
+    @parameter("switch")
+    def ensure_convergent_upper_integral(self, val):
+        """
+        Whether to ensure that upper integrals (eg. ngtm or mgtm) are converged for all mass values prescribed.
+
+        If True (which it is by default), then :attr:`upper_integral_ngtm` is added to :attr:`ngtm`, so that all values
+        within the integral can be trusted to be converged (within a relative tolerance of 10^-4).
+        :attr:`upper_integral_mass_limit` holds the relevant upper mass limit at
+        which the integral converges to this relative tolerance *for the masses set by the user*.
+
+        Changing `Mmax` will change the upper mass limit, as the the integral will need to be performed further to
+        converge for the highest mass.
+        """
+        return bool(val)
 
     @parameter("model")
     def filter_model(self, val):
@@ -143,7 +156,7 @@ class MassFunction(transfer.Transfer):
 
     @parameter("param")
     def delta_c(self, val):
-        """
+        r"""
         The critical overdensity for collapse, :math:`\delta_c`.
 
         :type: float
@@ -162,7 +175,7 @@ class MassFunction(transfer.Transfer):
 
     @parameter("model")
     def hmf_model(self, val):
-        """
+        r"""
         A model to use as the fitting function :math:`f(\sigma)`
 
         :type: str or `hmf.fitting_functions.FittingFunction` subclass
@@ -204,6 +217,7 @@ class MassFunction(transfer.Transfer):
         :type: dict
         """
         return val
+
     #
     # @parameter("param")
     # def delta_h(self, val):
@@ -308,13 +322,8 @@ class MassFunction(transfer.Transfer):
 
     @cached_quantity
     def m(self):
-        """Masses"""
+        """Masses [Msun/h]"""
         return 10 ** np.arange(self.Mmin, self.Mmax, self.dlog10m)
-
-    @cached_quantity
-    def M(self):
-        "Masses (alias of m, deprecated)"
-        raise AttributeError("Use of M has been deprecated for a while, and is now removed. Use m.")
 
     # @cached_quantity
     # def delta_halo(self):
@@ -334,7 +343,7 @@ class MassFunction(transfer.Transfer):
 
     @cached_quantity
     def _sigma_0(self):
-        """
+        r"""
         The normalised mass variance at z=0 :math:`\sigma`
         """
         return self._normalisation * self._unn_sigma0
@@ -348,7 +357,7 @@ class MassFunction(transfer.Transfer):
 
     @cached_quantity
     def _dlnsdlnm(self):
-        """
+        r"""
         The value of :math:`\left|\frac{\d \ln \sigma}{\d \ln m}\right|`, ``len=len(m)``
 
         Notes
@@ -432,7 +441,7 @@ class MassFunction(transfer.Transfer):
 
     @cached_quantity
     def dndm(self):
-        """
+        r"""
         The number density of haloes, ``len=len(m)`` [units :math:`h^4 M_\odot^{-1} Mpc^{-3}`]
         """
         # if self.z2 is None:  # #This is normally the case
@@ -444,11 +453,11 @@ class MassFunction(transfer.Transfer):
         # Alter the mass definition
         if self.hmf.measured_mass_definition is not None:
             if self.mdef is not None:
-                mnew = self.hmf.measured_mass_definition.change_definition(self.m, self.mdef)[0] # this uses NFW, but we can change that in halomod.
+                mnew = self.hmf.measured_mass_definition.change_definition(self.m, self.mdef)[
+                    0]  # this uses NFW, but we can change that in halomod.
                 spl = spline(np.log(mnew), np.log(dndm))
                 spl2 = spline(self.m, mnew)
                 dndm = np.exp(spl(np.log(self.m))) / spl2.derivative()(self.m)
-
 
         # else:  # #This is for a survey-volume weighted calculation
         #     raise NotImplementedError()
@@ -480,17 +489,49 @@ class MassFunction(transfer.Transfer):
 
     @cached_quantity
     def dndlnm(self):
-        """
+        r"""
         The differential mass function in terms of natural log of `m`, ``len=len(m)`` [units :math:`h^3 Mpc^{-3}`]
         """
         return self.m * self.dndm
 
     @cached_quantity
     def dndlog10m(self):
-        """
+        r"""
         The differential mass function in terms of log of `m`, ``len=len(m)`` [units :math:`h^3 Mpc^{-3}`]
         """
         return self.m * self.dndm * np.log(10)
+
+    @cached_quantity
+    def _required_upper_mass_limits(self):
+        # this is kind of bad, but we need to make sure that it knows we're using dndm here
+        _ = self.dndm
+        return calc_required_maximum_mass(copy.deepcopy(self), mass_density=True)
+
+    @cached_quantity
+    def upper_integral_mgtm(self):
+        """
+        Converged mass density integral above Mmax.
+
+        This is added to :attr:`rho_gtm` if :attr:`ensure_convergent_upper_integral` is True, to ensure that the
+        density integral at the *maximum* mass is converged.
+        """
+        return self._required_upper_mass_limits[1]
+
+    @cached_quantity
+    def upper_integral_mass_limit(self):
+        """Upper mass limit required to have a convergent upper integral"""
+        return self._required_upper_mass_limits[0]
+
+    @cached_quantity
+    def upper_integral_ngtm(self):
+        """
+        Converged number density integral above Mmax.
+
+        This is added to :attr:`ngtm` if :attr:`ensure_convergent_upper_integral` is True, to ensure that the
+        density integral at the *maximum* mass is converged.
+        """
+        _ = self.dndm
+        return calc_required_maximum_mass(copy.deepcopy(self))[1]
 
     def _gtm(self, dndm, mass_density=False):
         """
@@ -508,40 +549,21 @@ class MassFunction(transfer.Transfer):
         mass_density : bool, ``False``
             Whether to get the mass density, or number density.
         """
-        # Get required local variables
-        size = len(dndm)
-        m = self.m
-        # If the highest mass is very low, we try calculating it to higher masses
-        # The dlog10m is NOT CHANGED, so the input needs to be finely spaced.
-        # If the top value of dndm is NaN, don't try calculating higher masses.
-        if m[-1] < 10 ** 16.5 and not np.isnan(dndm[-1]) and not dndm[-1] == 0:
-            # ff.Behroozi function won't work here.
-            if not isinstance(self.hmf, ff.Behroozi):
-                new_mf = copy.deepcopy(self)
-                new_mf.update(Mmin=np.log10(self.m[-1]) + self.dlog10m, Mmax=18)
-                dndm = np.concatenate((dndm, new_mf.dndm))
-
-                m = np.concatenate((m, new_mf.m))
-
-        ngtm = int_gtm(m[dndm > 0], dndm[dndm > 0], mass_density)
-
-        # We need to set ngtm back in the original length vector with nans where they were originally
-        if len(ngtm) < len(m):  # Will happen if some dndlnm are NaN
-            ngtm_temp = np.zeros(len(dndm))
-            # ngtm_temp[:] = np.nan
-            ngtm_temp[dndm > 0] = ngtm
-            ngtm = ngtm_temp
-
-        # Since ngtm may have been extended, we cut it back
-        return ngtm[:size]
+        if not self.ensure_convergent_upper_integral:
+            return int_gtm(self.m, dndlnm=dndm * self.m, mass_density=mass_density)
+        else:
+            return int_gtm(self.m, dndlnm=dndm * self.m,
+                           upper_integral=self.upper_integral_mgtm if mass_density else self.upper_integral_ngtm,
+                           mass_density=mass_density)
 
     @cached_quantity
     def ngtm(self):
-        """
+        r"""
         The cumulative mass function above `m`, ``len=len(m)`` [units :math:`h^3 Mpc^{-3}`]
 
-        In the case that `m` does not extend to sufficiently high masses, this
-        routine will auto-generate ``dndm`` for an extended mass range.
+        If :attr:`ensure_convergent_upper_integral` is True, `ngtm` will be evaluated as the integral
+        of the current data, plus the integral of the mass function above the current mass limit,
+        ensuring that all values contained in `ngtm` are accurate.
 
         In the case of the ff.Behroozi fit, it is impossible to auto-extend the mass
         range except by the power-law fit, thus one should be careful to supply
@@ -551,11 +573,12 @@ class MassFunction(transfer.Transfer):
 
     @cached_quantity
     def rho_gtm(self):
-        """
+        r"""
         Mass density in haloes `>m`, ``len=len(m)`` [units :math:`M_\odot h^2 Mpc^{-3}`]
 
-        In the case that `m` does not extend to sufficiently high masses, this
-        routine will auto-generate ``dndm`` for an extended mass range.
+        If :attr:`ensure_convergent_upper_integral` is True, `rho_gtm` will be evaluated as the integral
+        of the current data, plus the integral of the mass function above the current mass limit,
+        ensuring that all values contained in `rho_gtm` are accurate.
 
         In the case of the ff.Behroozi fit, it is impossible to auto-extend the mass
         range except by the power-law fit, thus one should be careful to supply
@@ -565,7 +588,7 @@ class MassFunction(transfer.Transfer):
 
     @cached_quantity
     def rho_ltm(self):
-        """
+        r"""
         Mass density in haloes `<m`, ``len=len(m)`` [units :math:`M_\odot h^2 Mpc^{-3}`]
 
         .. note :: As of v1.6.2, this assumes that the entire mass density of
@@ -573,14 +596,8 @@ class MassFunction(transfer.Transfer):
                    mass is found in halos). This is not explicitly true of all
                    fitting functions (eg. Warren), in which case the definition
                    of this property is somewhat inconsistent, but will still
-                   work.
-
-        In the case that `m` does not extend to sufficiently high masses, this
-        routine will auto-generate ``dndm`` for an extended mass range.
-
-        In the case of the ff.Behroozi fit, it is impossible to auto-extend the mass
-        range except by the power-law fit, thus one should be careful to supply
-        appropriate mass ranges in this case.
+                   work. Note that this means it explicitly uses :func:`rho_gtm`,
+                   and all caveats for that function should be considered.
         """
         return self.mean_density0 - self.rho_gtm
 

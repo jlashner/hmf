@@ -13,11 +13,22 @@ dev
 **Enhancement**
 
 - Added `get_dependencies` method to _Framework, to enable finding all parameters that a quantity depends on.
+- More stable integration of the mass function. A pair of new quantities "upper_integral_ngtm" and "upper_integral_mgtm"
+  contain the integral of the mass function *above* the current mass limit. If ``ensure_converged_upper_integral`` is
+  set to True (which it is by default), then these are added to the appropriate integrals, so that all values within
+  the integral can be trusted to be converged (within a relative tolerance of 10^-4). Another quantity,
+  ``upper_integral_mass_limit`` holds the relevant upper mass limit at which the integral converges to this relative
+  tolerance *for the masses set by the user*. Changing `Mmax` will change the upper mass limit, as the the integral
+  will need to be performed further to converge for the highest mass.
 
 **Bugfixes**
 
 - When using camb for the transfer function, some cosmologies would lead to a segfault (i.e. when Ob0 or Tcmb0 are not
   set explicitly). This now raises a helpful error.
+
+**Deprecations**
+
+- No longer pass dndm to ``integrate_hmf``, but rather dndlnm. Passing dndm will be completely removed in v4.
 
 **Internals**
 
